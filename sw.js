@@ -5,7 +5,7 @@
    aplikasi langsung diterima guru saat online dan tetap terbuka saat sinyal buruk/offline. */
 const CACHE = 'siabsen-shell-v4';
 const CDN_CACHE = 'siabsen-cdn-v2';
-const NET_TIMEOUT = 5000;
+const NET_TIMEOUT = 2500; // jaringan lambat: setelah 2,5 dtk pakai salinan tersimpan, sementara unduhan tetap lanjut memperbarui cache
 // Hanya pustaka statis ber-versi/tampilan. Firestore, Auth, Google Drive, dan peta TIDAK pernah disimpan.
 const CDN_HOSTS = ['cdn.tailwindcss.com','cdnjs.cloudflare.com','unpkg.com','cdn.jsdelivr.net','www.gstatic.com','fonts.googleapis.com','fonts.gstatic.com'];
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './icon-maskable-512.png', './apple-touch-icon.png'];
@@ -13,11 +13,7 @@ const SHELL = ['./', './index.html', './manifest.webmanifest', './icon-192.png',
 const CDN_PRECACHE = [
   'https://cdn.tailwindcss.com',
   'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css',
-  'https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap',
-  'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
-  'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
-  'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js',
-  'https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js',
+  'https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap',
   'https://www.gstatic.com/firebasejs/12.4.0/firebase-app.js',
   'https://www.gstatic.com/firebasejs/12.4.0/firebase-auth.js',
   'https://www.gstatic.com/firebasejs/12.4.0/firebase-firestore.js',
@@ -87,8 +83,10 @@ self.addEventListener('fetch', e => {
   e.respondWith((async () => {
     const cached = () => caches.match(req, { ignoreSearch: true }).then(hit => hit || (req.mode === 'navigate' ? (caches.match('./index.html').then(h => h || caches.match('./'))) : undefined));
     try {
-      const res = await fetchWithTimeout(req, NET_TIMEOUT);
-      if (res && res.ok) { const copy = res.clone(); caches.open(CACHE).then(c => c.put(req, copy)).catch(() => {}); }
+      // Unduhan berjalan terus di latar belakang walau batas waktu terlewat, sehingga cache selalu diperbarui.
+      const netP = fetch(req).then(res => { if (res && res.ok) { const copy = res.clone(); caches.open(CACHE).then(c => c.put(req, copy)).catch(() => {}); } return res; });
+      netP.catch(() => {}); e.waitUntil(netP.catch(() => {}));
+      const res = await Promise.race([netP, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), NET_TIMEOUT))]);
       return res;
     } catch (_) {
       const hit = await cached();
